@@ -193,26 +193,45 @@ public function getProductById($productId) {
 
 // Method to add item to cart
 public function addToCart($userId, $productId) {
+    // Get period input from POST
+    $periods = isset($_POST['rental_periods']) ? (int)$_POST['rental_periods'] : 1;
+    
+    // Validate periods
+    if ($periods < 1) {
+        return "Invalid rental duration";
+    }
+
     // Check product availability
     $product = $this->getProductById($productId);
     if (!$product || $product['quantity'] < 1) {
         return "Product is currently unavailable.";
     }
 
-    // Check if item is already in cart
-    $stmt = $this->conn->prepare("SELECT * FROM cart_items WHERE renter_id = :userId AND product_id = :productId");
-    $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
-    $stmt->bindParam(':productId', $productId, PDO::PARAM_INT);
-    $stmt->execute();
+    // Calculate dates
+    $startDate = date('Y-m-d');
+    $endDate = date('Y-m-d', strtotime("+$periods days"));
+
+    // Check existing cart items
+    $stmt = $this->conn->prepare("SELECT * FROM cart_items 
+        WHERE renter_id = :userId AND product_id = :productId");
+    $stmt->execute([':userId' => $userId, ':productId' => $productId]);
+    
     if ($stmt->fetch()) {
         return "Item is already in your cart.";
     }
 
-    // Add item to cart
-    $stmt = $this->conn->prepare("INSERT INTO cart_items (renter_id, product_id, created_at, updated_at) VALUES (:userId, :productId, NOW(), NOW())");
-    $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
-    $stmt->bindParam(':productId', $productId, PDO::PARAM_INT);
-    if ($stmt->execute()) {
+    // Insert with calculated dates and periods
+    $stmt = $this->conn->prepare("INSERT INTO cart_items 
+        (renter_id, product_id, start_date, end_date, number_of_periods, created_at, updated_at)
+        VALUES (:userId, :productId, :startDate, :endDate, :periods, NOW(), NOW())");
+    
+    if ($stmt->execute([
+        ':userId' => $userId,
+        ':productId' => $productId,
+        ':startDate' => $startDate,
+        ':endDate' => $endDate,
+        ':periods' => $periods
+    ])) {
         return "Item added to cart successfully.";
     } else {
         return "Failed to add item to cart.";
@@ -220,7 +239,8 @@ public function addToCart($userId, $productId) {
 }
 
 public function getCartItems($userId) {
-    $sql = "SELECT c.*, p.name, p.image, p.rental_price, p.category, p.status, p.description, p.quantity
+    $sql = "SELECT c.*, p.name, p.image, p.rental_price, p.category, 
+                   p.status, p.description, p.quantity, p.rental_period
             FROM cart_items c
             INNER JOIN products p ON c.product_id = p.id
             WHERE c.renter_id = :userId";
@@ -235,7 +255,8 @@ public function getCartItems($userId) {
         if ($item['quantity'] < 1) {
             $allAvailable = false;
         }
-        $subtotal += $item['rental_price'];
+        // Calculate cost based on stored periods
+        $subtotal += $item['rental_price'] * $item['number_of_periods'];
     }
 
     return ['cartItems' => $cartItems, 'subtotal' => $subtotal, 'allAvailable' => $allAvailable];
@@ -245,30 +266,6 @@ public function getCartItems($userId) {
 
 //Profile Page
 // Add these methods to your existing Renter class
-
-public function switchRole() {
-    try {
-        $sql = "SELECT role FROM users WHERE id = :user_id";
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute(['user_id' => $_SESSION['id']]);
-        $currentRole = $stmt->fetchColumn();
-
-        $newRole = ($currentRole === 'renter') ? 'owner' : 'renter';
-
-        $updateSql = "UPDATE users SET role = :new_role WHERE id = :user_id";
-        $updateStmt = $this->conn->prepare($updateSql);
-        $updateStmt->execute([
-            'new_role' => $newRole,
-            'user_id' => $_SESSION['id']
-        ]);
-
-        $_SESSION['role'] = $newRole;
-        return $newRole;
-    } catch (Exception $e) {
-        $this->logError("Error switching role: " . $e->getMessage());
-        return false;
-    }
-}
 
 public function getUserData($userId) {
     $sql = "SELECT id, first_name, last_name, email, role, created_at, profile_picture 
@@ -313,96 +310,8 @@ public function updateProfilePicture($userId, $file) {
     return false;
 }
 
-
-
-//Review Page
-// Fetch owner details
-public function getOwnerDetails($ownerId) {
-    $stmt = $this->conn->prepare("
-        SELECT first_name, last_name, profile_picture 
-        FROM users 
-        WHERE id = ?
-    ");
-    $stmt->execute([$ownerId]);
-    return $stmt->fetch(PDO::FETCH_OBJ); // Return as object
-}
-
-// Fetch account creation date from user_verification
-public function getOwnerJoinDate($ownerId) {
-    $stmt = $this->conn->prepare("SELECT created_at FROM user_verification WHERE user_id = :ownerId");
-    $stmt->execute([':ownerId' => $ownerId]);
-    $verification = $stmt->fetch();
-    return $verification ? $verification['created_at'] : 'Unknown';
-}
-
-// Fetch owner's products
-public function getOwnerProducts($ownerId) {
-    $stmt = $this->conn->prepare("SELECT * FROM products WHERE owner_id = :ownerId");
-    $stmt->execute([':ownerId' => $ownerId]);
-    return $stmt->fetchAll();
-}
-
-// Fetch owner reviews
-public function getOwnerReviews($ownerId) {
-    $stmt = $this->conn->prepare("SELECT * FROM owner_reviews WHERE owner_id = :ownerId");
-    $stmt->execute([':ownerId' => $ownerId]);
-    return $stmt->fetchAll();
-}
-
-// Fetch average owner rating
-public function getOwnerAverageRating($ownerId) {
-    $stmt = $this->conn->prepare("SELECT AVG(rating) as avg_rating FROM owner_reviews WHERE owner_id = :ownerId");
-    $stmt->execute([':ownerId' => $ownerId]);
-    $rating = $stmt->fetch();
-    return $rating['avg_rating'] ? round($rating['avg_rating'], 1) : 0;
-}
-
-// Fetch reviews with sorting and filtering
-public function getReviews($userId, $role, $sort = 'newest', $filter = 'all') {
-    $reviewTable = ($role === 'renter') ? 'renter_reviews' : 'owner_reviews';
-    $filterColumn = ($role === 'renter') ? 'renter_id' : 'owner_id';
-
-    // Sorting conditions
-    $sortOrder = "created_at DESC";
-    switch ($sort) {
-        case 'oldest':
-            $sortOrder = "created_at ASC";
-            break;
-        case 'highest_rating':
-            $sortOrder = "rating DESC";
-            break;
-        case 'lowest_rating':
-            $sortOrder = "rating ASC";
-            break;
-    }
-
-    // Filtering conditions
-    if ($filter === 'buyer') {
-        $filterColumn = "owner_id";
-    } elseif ($filter === 'seller') {
-        $filterColumn = "renter_id";
-    }
-
-    $stmt = $this->conn->prepare("SELECT * FROM $reviewTable WHERE $filterColumn = :userId ORDER BY $sortOrder");
-    $stmt->execute([':userId' => $userId]);
-    return $stmt->fetchAll();
-}
-
-
-
-//Rentals Page
 // In renter_class.php
-public function formatRentalPeriod($startDate, $endDate) {
-    $start = new DateTime($startDate);
-    $end = new DateTime($endDate);
-    
-    // For rentals within the same month
-    if ($start->format('F Y') === $end->format('F Y')) {
-        return $start->format('F j') . ' - ' . $end->format('j, Y');
-    }
-    // For rentals spanning different months
-    return $start->format('M j, Y') . ' to ' . $end->format('M j, Y');
-}
+
 public function getRentals($renterId) {
     $stmt = $this->conn->prepare("
         SELECT r.*, 
@@ -420,62 +329,61 @@ public function getRentals($renterId) {
     $rentals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($rentals as &$rental) {
-        if (in_array($rental['status'], ['completed', 'returned'])) {
-            $rental['remaining_days'] = 'Completed';
-        } elseif ($rental['status'] === 'cancelled') {
-            $rental['remaining_days'] = 'Cancelled';
-        } elseif (!empty($rental['end_date'])) {
-            // Accurate date comparison
-            $today = new DateTime('today');
-            $endDate = new DateTime($rental['end_date']);
-            $endDate->setTime(0, 0, 0);
-            
-            $interval = $today->diff($endDate);
-            $absoluteDays = $interval->days;
+        // Initialize remaining_days with default value
+        $rental['remaining_days'] = 'N/A';
+        
+        // Handle date display
+        $showDates = in_array($rental['status'], [
+            'picked_up', 'completed', 'returned', 
+            'overdue', 'pending_return'
+        ]);
+        $rental['display_start'] = $showDates ? $rental['start_date'] : 'N/A';
+        $rental['display_end'] = $showDates ? $rental['end_date'] : 'N/A';
 
-            if ($interval->invert) { // Past due
-                if ($rental['status'] !== 'overdue' && !in_array($rental['status'], ['completed', 'returned'])) {
-                    // Update status to overdue
-                    $updateStmt = $this->conn->prepare("
-                        UPDATE rentals 
-                        SET status = 'overdue', 
-                            updated_at = NOW() 
-                        WHERE id = ?
-                    ");
-                    $updateStmt->execute([$rental['id']]);
-                    $rental['status'] = 'overdue';
+        // Use original values for calculations
+        $originalEndDate = $rental['end_date'];
+        $originalStatus = $rental['status'];
+
+        // Calculate remaining days
+        if (in_array($originalStatus, ['completed', 'returned'])) {
+            $rental['remaining_days'] = 'Completed';
+        } elseif ($originalStatus === 'cancelled') {
+            $rental['remaining_days'] = 'Cancelled';
+        } elseif (!empty($originalEndDate)) {
+            try {
+                $today = new DateTime('today');
+                $endDate = new DateTime($originalEndDate);
+                $endDate->setTime(0, 0, 0);
+                
+                $interval = $today->diff($endDate);
+                $absoluteDays = $interval->days;
+
+                if ($interval->invert) {
+                    if ($originalStatus !== 'overdue' && !in_array($originalStatus, ['completed', 'returned'])) {
+                        $updateStmt = $this->conn->prepare("
+                            UPDATE rentals 
+                            SET status = 'overdue', 
+                                updated_at = NOW() 
+                            WHERE id = ?
+                        ");
+                        $updateStmt->execute([$rental['id']]);
+                        $rental['status'] = 'overdue';
+                    }
+                    $rental['remaining_days'] = 'Overdue by ' . $absoluteDays . ' day' . ($absoluteDays !== 1 ? 's' : '');
+                } elseif ($absoluteDays > 0) {
+                    $rental['remaining_days'] = $absoluteDays . ' day' . ($absoluteDays !== 1 ? 's left' : ' left');
+                } else {
+                    $rental['remaining_days'] = 'Due Today';
                 }
-                $rental['remaining_days'] = 'Overdue by ' . $absoluteDays . ' day' . ($absoluteDays !== 1 ? 's' : '');
-            } elseif ($absoluteDays > 0) {
-                $rental['remaining_days'] = $absoluteDays . ' day' . ($absoluteDays !== 1 ? 's left' : ' left');
-            } else {
-                $rental['remaining_days'] = 'Due Today';
+            } catch (Exception $e) {
+                // Handle invalid dates gracefully
+                $rental['remaining_days'] = 'N/A';
             }
-        } else {
-            $rental['remaining_days'] = 'N/A';
         }
     }
     unset($rental);
 
     return $rentals;
-}
-private function calculateRemainingDays($status, $startDate, $endDate) {
-    if ($status === 'returned') {
-        return 'Completed';
-    } elseif ($status === 'cancelled') {
-        return 'Cancelled';
-    } elseif ($status === 'overdue') {
-        $today = new DateTime();
-        $end = new DateTime($endDate);
-        $interval = $today->diff($end);
-        return -$interval->days;
-    } elseif (!empty($endDate)) {
-        $today = new DateTime();
-        $end = new DateTime($endDate);
-        $interval = $today->diff($end);
-        return ($today < $end) ? $interval->days : -$interval->days;
-    }
-    return 'N/A';
 }
 
 public function getStatusBadgeColor($status) {
@@ -546,85 +454,7 @@ public function getProofs($rentalId) {
 }
 
 // Fetch proofs
-private function uploadFile($file) {
-    // Your existing XAMPP path
-    $uploadDir = '/Applications/XAMPP/xamppfiles/htdocs/rb/uploads/proofs/';
-    
-    if (!file_exists($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
-    }
-    
-    $filename = uniqid() . '_' . basename($file['name']);
-    $targetPath = $uploadDir . $filename;
-    
-    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-        throw new Exception("Upload failed. Check permissions for: " . $uploadDir);
-    }
-    
-    // Return web-accessible path relative to domain root
-    return '/rb/uploads/proofs/' . $filename; // Add /rb/ here
-}
 
-
-// Check overdue status
-public function checkOverdueStatus($rentalId, $currentStatus, $endDate) {
-    if (in_array($currentStatus, ['renting', 'delivered']) && date('Y-m-d') > $endDate) {
-        try {
-            $this->conn->beginTransaction();
-            $stmt = $this->conn->prepare("UPDATE rentals SET status = 'overdue' WHERE id = ?");
-            $stmt->execute([$rentalId]);
-            $this->conn->commit();
-            return 'overdue';
-        } catch (PDOException $e) {
-            $this->conn->rollBack();
-            error_log("Error updating overdue status: " . $e->getMessage());
-        }
-    }
-    return $currentStatus;
-}
-
-// Confirm end rental
-public function confirmEndRental($rentalId) {
-    try {
-        $this->conn->beginTransaction();
-        $this->conn->prepare("
-            UPDATE rentals 
-            SET status = 'completed', actual_end_date = CURDATE()
-            WHERE id = ?
-        ")->execute([$rentalId]);
-        $this->conn->commit();
-        return true;
-    } catch (Exception $e) {
-        $this->conn->rollBack();
-        error_log("Error ending rental: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Confirm return
-public function confirmReturn($rentalId, $productId) {
-    try {
-        $this->conn->beginTransaction();
-        $this->conn->prepare("
-            UPDATE rentals 
-            SET status = 'returned', actual_end_date = CURDATE()
-            WHERE id = ?
-        ")->execute([$rentalId]);
-
-        $this->conn->prepare("
-            UPDATE products 
-            SET quantity = quantity + 1 
-            WHERE id = ?
-        ")->execute([$productId]);
-
-        $this->conn->commit();
-        return true;
-    } catch (Exception $e) {
-        $this->conn->rollBack();
-        error_log("Error confirming return: " . $e->getMessage());
-        return false;
-    }
-}
 
 // Check feedback
 public function checkFeedback($productId, $renterId) {
@@ -641,14 +471,6 @@ public function checkFeedback($productId, $renterId) {
     }
 }
 
-public function hasGivenFeedbackToOwner($rentalId) {
-    $stmt = $this->conn->prepare("
-        SELECT id FROM owner_reviews 
-        WHERE rental_id = ? AND renter_id = ?
-    ");
-    $stmt->execute([$rentalId, $this->userId]);
-    return $stmt->rowCount() > 0;
-}
 
 public function hasReceivedFeedbackFromOwner($rentalId) {
     $stmt = $this->conn->prepare("
@@ -707,51 +529,6 @@ public function endRental($rentalId) {
     }
 }
 
-public function initiateReturn($rentalId, $returnProof) {
-    try {
-        $this->conn->beginTransaction();
-        
-        // Upload proof
-        $proofPath = $this->uploadFile($returnProof);
-        
-        // Update status to waiting_admin_acceptance (not pending)
-        $stmt = $this->conn->prepare("
-            UPDATE rentals 
-            SET status = 'waiting_admin_acceptance', 
-                updated_at = NOW() 
-            WHERE id = ? AND renter_id = ?
-        ");
-        $stmt->execute([$rentalId, $this->userId]);
-        
-        // Store proof
-        $this->storeProof($rentalId, 'return', $proofPath);
-        
-        $this->conn->commit();
-        
-    } catch (Exception $e) {
-        $this->conn->rollBack();
-        throw new Exception("Return initiation failed: " . $e->getMessage());
-    }
-}
-
-private function storeProof($rentalId, $type, $path) {
-    $stmt = $this->conn->prepare("
-        INSERT INTO proofs 
-        (rental_id, proof_type, proof_url, created_at)
-        VALUES (?, ?, ?, NOW())
-    ");
-    $stmt->execute([$rentalId, $type, $path]);
-}
-
-private function logRentalAction($rentalId, $action) {
-    $stmt = $this->conn->prepare("
-        INSERT INTO rental_logs 
-        (rental_id, user_id, action, timestamp)
-        VALUES (?, ?, ?, NOW())
-    ");
-    $stmt->execute([$rentalId, $this->userId, $action]);
-}
-
 
 public function isStatusActive($statusKey, $currentStatus, $statusFlow) {
     $statusKeys = array_keys($statusFlow);
@@ -764,107 +541,6 @@ public function isStatusActive($statusKey, $currentStatus, $statusFlow) {
     }
     
     return $statusIndex <= $currentIndex;
-}
-
-
-
-public function submitFeedback($rentalId, $productRating, $productComment, $ownerRating, $ownerComment) {
-    try {
-        $this->conn->beginTransaction();
-
-        // 1. Save product feedback
-        $stmt = $this->conn->prepare("
-            INSERT INTO comments (product_id, renter_id, rating, comment, created_at)
-            VALUES (:product_id, :renter_id, :rating, :comment, NOW())
-        ");
-        $stmt->execute([
-            ':product_id' => $this->getProductIdFromRental($rentalId),
-            ':renter_id' => $_SESSION['id'],
-            ':rating' => $productRating,
-            ':comment' => $productComment
-        ]);
-
-        // 2. Save owner review
-        $stmt = $this->conn->prepare("
-            INSERT INTO owner_reviews (owner_id, renter_id, rental_id, rating, comment, created_at)
-            VALUES (:owner_id, :renter_id, :rental_id, :rating, :comment, NOW())
-        ");
-        $stmt->execute([
-            ':owner_id' => $this->getOwnerIdFromRental($rentalId),
-            ':renter_id' => $_SESSION['id'],
-            ':rental_id' => $rentalId,
-            ':rating' => $ownerRating,
-            ':comment' => $ownerComment
-        ]);
-
-        // 3. Update rental status
-        $stmt = $this->conn->prepare("
-            UPDATE rentals SET status = 'completed' WHERE id = ?
-        ");
-        $stmt->execute([$rentalId]);
-
-        $this->conn->commit();
-        
-    } catch (Exception $e) {
-        $this->conn->rollBack();
-        throw new Exception("Failed to submit feedback: " . $e->getMessage());
-    }
-}
-
-private function uploadProof($file, $type) {
-    $uploadDir = '../uploads/proofs/';
-    $allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
-    
-    if (!in_array($file['type'], $allowedTypes)) {
-        throw new Exception("Invalid file type. Only JPEG, PNG, and PDF are allowed.");
-    }
-
-    $filename = uniqid() . '_' . basename($file['name']);
-    $targetPath = $uploadDir . $filename;
-
-    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-        throw new Exception("Failed to upload proof file.");
-    }
-
-    return $filename;
-}
-
-private function getProductIdFromRental($rentalId) {
-    $stmt = $this->conn->prepare("SELECT product_id FROM rentals WHERE id = ?");
-    $stmt->execute([$rentalId]);
-    return $stmt->fetchColumn();
-}
-
-private function getOwnerIdFromRental($rentalId) {
-    $stmt = $this->conn->prepare("SELECT owner_id FROM rentals WHERE id = ?");
-    $stmt->execute([$rentalId]);
-    return $stmt->fetchColumn();
-}
-    
-
-
-//profile
-public function updateProfile($userId, $firstName, $lastName, $email, $mobile) {
-    $stmt = $this->conn->prepare("UPDATE users 
-        SET first_name = ?, 
-            last_name = ?, 
-            email = ?, 
-            mobile_number = ? 
-        WHERE id = ?");
-    return $stmt->execute([$firstName, $lastName, $email, $mobile, $userId]);
-}
-
-public function verifyCurrentPassword($userId, $password) {
-    $stmt = $this->conn->prepare("SELECT password FROM users WHERE id = ?");
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch();
-    return password_verify($password, $user['password']);
-}
-
-public function updatePassword($userId, $newPassword) {
-    $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
-    $stmt = $this->conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-    return $stmt->execute([$hashedPassword, $userId]);
 }
 
 //changepassword
@@ -882,20 +558,6 @@ public function changePassword($userId, $currentPassword, $newPassword) {
     $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
     $stmt = $this->conn->prepare("UPDATE users SET password = ? WHERE id = ?");
     return $stmt->execute([$hashedPassword, $userId]);
-}
-
-public function getRentalsByUserId($userId) {
-    $stmt = $this->conn->prepare("
-        SELECT r.*, p.name AS product_name, p.image AS product_image, 
-               p.brand AS product_brand, u.name AS owner_name 
-        FROM rentals r
-        JOIN products p ON r.product_id = p.id
-        JOIN users u ON r.owner_id = u.id
-        WHERE r.renter_id = ?
-        ORDER BY r.start_date DESC
-    ");
-    $stmt->execute([$userId]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 
@@ -924,9 +586,5 @@ public function getRentalsByStatus($userId, $statuses = []) {
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-public function removeFromCart($cartItemId) {
-    $stmt = $this->conn->prepare("DELETE FROM cart_items WHERE id = ?");
-    return $stmt->execute([$cartItemId]);
-}
 }
 ?>

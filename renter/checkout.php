@@ -15,80 +15,35 @@ $userId = $_SESSION['id'];
 $cartItems = [];
 $subtotal = 0;
 $discount = 0;
-$shippingCharge = 0;
 $taxRate = 0.12;
 $taxAmount = 0;
 $total = 0;
 $isDirectCheckout = false;
 $allAvailable = true;
 
-// Check if it's direct checkout (from browse.php) or cart checkout
 $isDirectCheckout = isset($_POST['direct_checkout']) && $_POST['direct_checkout'] == 1;
 $productId = $isDirectCheckout ? (int)$_POST['product_id'] : null;
-$startDate = $isDirectCheckout ? $_POST['start_date'] : null;
-$endDate = $isDirectCheckout ? $_POST['end_date'] : null;
+$periods = $isDirectCheckout ? (int)$_POST['rental_periods'] : 1;
 
-// Handle Direct Checkout (From browse.php)
 if ($isDirectCheckout) {
-    // Validate direct checkout parameters
-    if (!$productId || !$startDate || !$endDate) {
-        $_SESSION['error_message'] = "Missing required checkout parameters.";
+    if (!$productId || $periods < 1) {
+        $_SESSION['error_message'] = "Invalid checkout parameters";
         header('Location: browse.php');
         exit();
     }
 
-    // Validate dates
-    $dateFormat = 'Y-m-d';
-    $startDateObj = DateTime::createFromFormat($dateFormat, $startDate);
-    $endDateObj = DateTime::createFromFormat($dateFormat, $endDate);
-
-    if (!$startDateObj || !$endDateObj || $startDateObj->format($dateFormat) !== $startDate || $endDateObj->format($dateFormat) !== $endDate) {
-        $_SESSION['error_message'] = "Invalid date format.";
-        header('Location: item.php?id=' . $productId);
-        exit();
-    }
-
-    if ($startDateObj > $endDateObj) {
-        $_SESSION['error_message'] = "End date cannot be before start date.";
-        header('Location: item.php?id=' . $productId);
-        exit();
-    }
-
-    // Fetch product data
-    $sql = "SELECT * FROM products WHERE id = :productId";
-    $stmt = $conn->prepare($sql);
+    $stmt = $conn->prepare("SELECT * FROM products WHERE id = :productId");
     $stmt->bindParam(':productId', $productId, PDO::PARAM_INT);
     $stmt->execute();
     $product = $stmt->fetch();
 
     if (!$product) {
-        $_SESSION['error_message'] = "Product not found.";
+        $_SESSION['error_message'] = "Product not found";
         header('Location: browse.php');
         exit();
     }
 
-    if ($product['quantity'] < 1) {
-        $allAvailable = false;
-    }
-
-    // Calculate total cost based on rental period
-    $rentalPeriod = strtolower($product['rental_period']);
-    $interval = $startDateObj->diff($endDateObj);
-    $days = $interval->days + 1;
-
-    switch ($rentalPeriod) {
-        case 'day':
-            $periods = $days;
-            break;
-        case 'week':
-            $periods = ceil($days / 7);
-            break;
-        case 'month':
-            $periods = ceil($days / 30);
-            break;
-        default:
-            $periods = 1;
-    }
+    if ($product['quantity'] < 1) $allAvailable = false;
 
     $totalCost = $product['rental_price'] * $periods;
     $subtotal += $totalCost;
@@ -100,57 +55,29 @@ if ($isDirectCheckout) {
         'image' => $product['image'],
         'rental_price' => $product['rental_price'],
         'rental_period' => $product['rental_period'],
-        'start_date' => $startDate,
-        'end_date' => $endDate,
         'periods' => $periods,
-        'total_cost' => $totalCost,
+        'total_cost' => $totalCost
     ];
-}
-// Handle Cart Checkout (From cart.php)
-else {
-    $sql = "SELECT c.*, p.name, p.image, p.rental_price, p.category, p.description, p.owner_id, p.rental_period, p.quantity
-            FROM cart_items c
-            INNER JOIN products p ON c.product_id = p.id
-            WHERE c.renter_id = :userId";
-    $stmt = $conn->prepare($sql);
+} else {
+    $stmt = $conn->prepare("
+        SELECT c.*, p.name, p.image, p.rental_price, p.category, 
+               p.description, p.owner_id, p.rental_period, p.quantity
+        FROM cart_items c
+        INNER JOIN products p ON c.product_id = p.id
+        WHERE c.renter_id = :userId
+    ");
     $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
     $stmt->execute();
     $fetchedCartItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if ($fetchedCartItems) {
         foreach ($fetchedCartItems as $item) {
-            if (empty($item['start_date']) || empty($item['end_date'])) {
-                $_SESSION['error_message'] = "Please set both start and end dates for all items in your cart.";
-                header('Location: cart.php');
-                exit();
-            }
-
             if ($item['quantity'] < 1) {
                 $allAvailable = false;
                 break;
             }
 
-            // Calculate rental period
-            $rentalPeriod = strtolower($item['rental_period']);
-            $startDateObj = new DateTime($item['start_date']);
-            $endDateObj = new DateTime($item['end_date']);
-            $interval = $startDateObj->diff($endDateObj);
-            $days = $interval->days + 1;
-
-            switch ($rentalPeriod) {
-                case 'day':
-                    $periods = $days;
-                    break;
-                case 'week':
-                    $periods = ceil($days / 7);
-                    break;
-                case 'month':
-                    $periods = ceil($days / 30);
-                    break;
-                default:
-                    $periods = 1;
-            }
-
+            $periods = $item['number_of_periods'];
             $totalCost = $item['rental_price'] * $periods;
             $subtotal += $totalCost;
 
@@ -161,17 +88,15 @@ else {
                 'image' => $item['image'],
                 'rental_price' => $item['rental_price'],
                 'rental_period' => $item['rental_period'],
-                'start_date' => $item['start_date'],
-                'end_date' => $item['end_date'],
                 'periods' => $periods,
-                'total_cost' => $totalCost,
+                'total_cost' => $totalCost
             ];
         }
     }
 }
 
 $taxAmount = $subtotal * $taxRate;
-$total = $subtotal - $discount + $shippingCharge + $taxAmount;
+$total = $subtotal - $discount + $taxAmount;
 $enableCheckout = $allAvailable;
 
 if (empty($_SESSION['csrf_token'])) {
@@ -187,7 +112,6 @@ if (empty($_SESSION['csrf_token'])) {
     <link rel="icon" type="image/png" href="../images/rb logo white.png">
     <link href="../vendor/bootstrap-5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="../vendor/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../vendor/flatpickr.min.css">
 </head>
 <body>
     <?php require_once '../includes/navbarr.php'; ?>
@@ -216,73 +140,60 @@ if (empty($_SESSION['csrf_token'])) {
                                     </div>
                                     <?php unset($_SESSION['error_message']); ?>
                                 <?php endif; ?>
-                                <?php if (isset($_SESSION['success_message'])): ?>
-                                    <div class="alert alert-success alert-dismissible fade show" role="alert">
-                                        <?= htmlspecialchars($_SESSION['success_message']) ?>
-                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                    </div>
-                                    <?php unset($_SESSION['success_message']); ?>
-                                <?php endif; ?>
                                 <ol class="activity-checkout mb-0 px-4 mt-3">
                                     <li class="">
                                         <h6 class="mb-1 fw-bold">Order Confirmation</h6>
                                         <div class="mb-3">
                                             <form method="post" action="process_checkout.php" class="needs-validation" novalidate>
-                                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token']; ?>">
-                                                <input type="hidden" name="product_id" value="<?= $productId ?>">
-                                                <input type="hidden" name="start_date" value="<?= $startDate ?>">
-                                                <input type="hidden" name="end_date" value="<?= $endDate ?>">
-<!-- Inside the form in checkout.php -->
-<?php if ($isDirectCheckout): ?>
-    <input type="hidden" name="direct_checkout" value="1"> <!-- Add this line -->
-    <input type="hidden" name="product_id" value="<?= htmlspecialchars($productId); ?>">
-    <input type="hidden" name="start_date" value="<?= htmlspecialchars($startDate); ?>">
-    <input type="hidden" name="end_date" value="<?= htmlspecialchars($endDate); ?>">
-<?php endif; ?>
+                                                <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                                                <?php if ($isDirectCheckout): ?>
+                                                    <input type="hidden" name="direct_checkout" value="1">
+                                                    <input type="hidden" name="product_id" value="<?= $productId ?>">
+                                                    <input type="hidden" name="rental_periods" value="<?= $periods ?>">
+                                                <?php endif; ?>
 
-                                               <!-- Your Information Section -->
-<div class="card mb-3"> <!-- Changed from mb-4 -->
-    <div class="card-body p-3"> <!-- Reduced padding -->
-        <h5 class="mb-2 fs-5">Your Information</h5> <!-- Smaller heading -->
-        <div class="row g-2"> <!-- Tighter grid spacing -->
-            <!-- First Name -->
-            <div class="col-6">
-                <div class="bg-light rounded p-2"> <!-- Lighter background, smaller padding -->
-                    <small class="text-muted d-block">First Name</small>
-                    <span class="fs-6"><?= htmlspecialchars($_SESSION['first_name'] ?? '') ?></span>
-                </div>
-            </div>
+                                                        <div class="card mb-3"> <!-- Changed from mb-4 -->
+                                                            <div class="card-body p-3"> <!-- Reduced padding -->
+                                                                <h5 class="mb-2 fs-5">Your Information</h5> <!-- Smaller heading -->
+                                                                <div class="row g-2"> <!-- Tighter grid spacing -->
+                                                                    <!-- First Name -->
+                                                                    <div class="col-6">
+                                                                        <div class="bg-light rounded p-2"> <!-- Lighter background, smaller padding -->
+                                                                            <small class="text-muted d-block">First Name</small>
+                                                                            <span class="fs-6"><?= htmlspecialchars($_SESSION['first_name'] ?? '') ?></span>
+                                                                        </div>
+                                                                    </div>
 
-            <!-- Last Name -->
-            <div class="col-6">
-                <div class="bg-light rounded p-2">
-                    <small class="text-muted d-block">Last Name</small>
-                    <span class="fs-6"><?= htmlspecialchars($_SESSION['last_name'] ?? '') ?></span>
-                </div>
-            </div>
+                                                                    <!-- Last Name -->
+                                                                    <div class="col-6">
+                                                                        <div class="bg-light rounded p-2">
+                                                                            <small class="text-muted d-block">Last Name</small>
+                                                                            <span class="fs-6"><?= htmlspecialchars($_SESSION['last_name'] ?? '') ?></span>
+                                                                        </div>
+                                                                    </div>
 
-            <!-- Contact Number -->
-            <div class="col-6">
-                <div class="bg-light rounded p-2 mt-2"> <!-- Added top margin -->
-                    <small class="text-muted d-block">Contact</small>
-                    <span class="fs-6"><?= htmlspecialchars($_SESSION['phone'] ?? 'N/A') ?></span>
-                </div>
-            </div>
+                                                                    <!-- Contact Number -->
+                                                                    <div class="col-6">
+                                                                        <div class="bg-light rounded p-2 mt-2"> <!-- Added top margin -->
+                                                                            <small class="text-muted d-block">Contact</small>
+                                                                            <span class="fs-6"><?= htmlspecialchars($_SESSION['phone'] ?? 'N/A') ?></span>
+                                                                        </div>
+                                                                    </div>
 
-            <!-- Email Address -->
-            <div class="col-6">
-                <div class="bg-light rounded p-2 mt-2">
-                    <small class="text-muted d-block">Email</small>
-                    <span class="fs-6 text-truncate d-block"><?= htmlspecialchars($_SESSION['email'] ?? '') ?></span>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-                                                <div class="card mb-4">
-                                                    <div class="card-body">
-                                                        <h5 class="mb-3">Payment Method</h5>
+                                                                    <!-- Email Address -->
+                                                                    <div class="col-6">
+                                                                        <div class="bg-light rounded p-2 mt-2">
+                                                                            <small class="text-muted d-block">Email</small>
+                                                                            <span class="fs-6 text-truncate d-block"><?= htmlspecialchars($_SESSION['email'] ?? '') ?></span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                
+                                                <div class="card mb-3">
+                                                    <div class="card-body p-3">
+                                                        <h5 class="mb-2 fs-5">Payment Method</h5>
                                                         <div class="alert alert-info">
                                                             <i class="bi bi-info-circle me-2"></i>
                                                             All transactions are cash-only. Please prepare exact amount for in-store pickup.
@@ -323,65 +234,43 @@ if (empty($_SESSION['csrf_token'])) {
                                         </thead>
                                         <tbody>
                                             <?php foreach ($cartItems as $item): ?>
-                                                
                                                 <tr>
                                                     <th scope="row">
-                                                        <img src="../img/uploads/<?= htmlspecialchars($item['image']); ?>" alt="product-img" title="product-img" class="rounded" style="width: 60px; height: 60px; object-fit: cover;" onerror="this.onerror=null; this.src='../img/uploads/default.png';">
+                                                        <img src="../img/uploads/<?= htmlspecialchars($item['image']) ?>" alt="product-img" class="rounded" style="width: 60px; height: 60px; object-fit: cover;" onerror="this.onerror=null; this.src='../img/uploads/default.png';">
                                                     </th>
                                                     <td>
-                                                        <h6 class="font-size-16 text-truncate"><a href="item.php?id=<?= $item['product_id']; ?>" class="text-dark"><?= htmlspecialchars($item['name']); ?></a></h6>
+                                                        <h6 class="font-size-16 text-truncate">
+                                                            <a href="item.php?id=<?= $item['product_id'] ?>" class="text-dark">
+                                                                <?= htmlspecialchars($item['name']) ?>
+                                                            </a>
+                                                        </h6>
                                                         <p class="text-muted mb-0">
-                                                            <i class="bi bi-star-fill text-warning"></i>
-                                                            <i class="bi bi-star-fill text-warning"></i>
-                                                            <i class="bi bi-star-fill text-warning"></i>
-                                                            <i class="bi bi-star-fill text-warning"></i>
-                                                            <i class="bi bi-star-half text-warning"></i>
+                                                            ₱<?= number_format($item['rental_price'], 2) ?> per <?= htmlspecialchars($item['rental_period']) ?>
                                                         </p>
-                                                        <p class="text-muted mb-0 mt-1">₱<?= number_format($item['rental_price'], 2); ?> per <?= htmlspecialchars($item['rental_period']); ?></p>
-                                                        <p class="text-muted mb-0">Duration: <?= htmlspecialchars($item['start_date']); ?> to <?= htmlspecialchars($item['end_date']); ?> (<?= $item['periods']; ?> <?= htmlspecialchars($item['rental_period'] . ($item['periods'] > 1 ? 's' : '')); ?>)</p>
+                                                        <p class="text-muted mb-0">
+                                                            Duration: <?= $item['periods'] ?> Day<?= $item['periods'] > 1 ? 's' : '' ?>
+                                                        </p>
                                                     </td>
-                                                    <td>₱<?= number_format($item['total_cost'], 2); ?></td>
+                                                    <td>₱<?= number_format($item['total_cost'], 2) ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                             <tr>
                                                 <td colspan="2">
-                                                    <h6 class="font-size-14 m-0">Sub Total :</h6>
+                                                    <h6 class="font-size-14 m-0">Sub Total:</h6>
                                                 </td>
-                                                <td>
-                                                    ₱<?= number_format($subtotal, 2); ?>
-                                                </td>
+                                                <td>₱<?= number_format($subtotal, 2) ?></td>
                                             </tr>
                                             <tr>
                                                 <td colspan="2">
-                                                    <h6 class="font-size-14 m-0">Discount :</h6>
+                                                    <h6 class="font-size-14 m-0">Estimated Tax (12%):</h6>
                                                 </td>
-                                                <td>
-                                                    - ₱<?= number_format($discount, 2); ?>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td colspan="2">
-                                                    <h6 class="font-size-14 m-0">Shipping Charge :</h6>
-                                                </td>
-                                                <td>
-                                                    ₱<?= number_format($shippingCharge, 2); ?>
-                                                </td>
-                                            </tr>
-                                            <tr>
-                                                <td colspan="2">
-                                                    <h6 class="font-size-14 m-0">Estimated Tax (12%) :</h6>
-                                                </td>
-                                                <td>
-                                                    ₱<?= number_format($taxAmount, 2); ?>
-                                                </td>
+                                                <td>₱<?= number_format($taxAmount, 2) ?></td>
                                             </tr>
                                             <tr class="bg-light">
                                                 <td colspan="2">
                                                     <h6 class="font-size-14 m-0">Total:</h6>
                                                 </td>
-                                                <td>
-                                                    ₱<?= number_format($total, 2); ?>
-                                                </td>
+                                                <td>₱<?= number_format($total, 2) ?></td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -404,7 +293,6 @@ if (empty($_SESSION['csrf_token'])) {
         </div>
     </footer>
     <script src="../vendor/bootstrap-5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../vendor/flatpickr.min.js"></script>
     <script>
         (() => {
             'use strict'
@@ -419,9 +307,6 @@ if (empty($_SESSION['csrf_token'])) {
                 }, false)
             })
         })();
-        <?php if (!$allAvailable): ?>
-            document.querySelector('button[type="submit"]').disabled = true;
-        <?php endif; ?>
     </script>
 </body>
 </html>

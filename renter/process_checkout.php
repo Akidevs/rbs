@@ -32,13 +32,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Direct Checkout Flow
         if ($isDirectCheckout) {
             // Validate direct checkout parameters
-            if (empty($_POST['product_id']) || empty($_POST['start_date']) || empty($_POST['end_date'])) {
+            if (empty($_POST['product_id']) || empty($_POST['rental_periods'])) {
                 throw new Exception("Missing required fields for direct checkout.");
             }
 
             $productId = (int)$_POST['product_id'];
-            $startDate = $_POST['start_date'];
-            $endDate = $_POST['end_date'];
+            $periods = (int)$_POST['rental_periods'];
+
+            if ($periods < 1) {
+                throw new Exception("Invalid number of rental periods.");
+            }
 
             // Validate product existence
             $stmt = $conn->prepare("SELECT * FROM products WHERE id = ?");
@@ -48,43 +51,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$product) throw new Exception("Product not found");
             if ($product['quantity'] < 1) throw new Exception("Product out of stock");
 
-            // Calculate rental period
-            $start = new DateTime($startDate);
-            $end = new DateTime($endDate);
-            $interval = $start->diff($end);
-            $days = $interval->days + 1;
+            // Calculate dates
+            $startDate = date('Y-m-d');
+            $endDate = date('Y-m-d', strtotime("+$periods days"));
 
-            switch (strtolower($product['rental_period'])) {
-                case 'day': $periods = $days; break;
-                case 'week': $periods = ceil($days / 7); break;
-                case 'month': $periods = ceil($days / 30); break;
-                default: $periods = 1;
-            }
-
+            // Calculate total cost
             $totalCost = $product['rental_price'] * $periods;
 
             // Create rental record
             $stmt = $conn->prepare("INSERT INTO rentals (
-                product_id, renter_id, owner_id, start_date, end_date,
-                rental_price, total_cost, payment_method, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_confirmation')");
+                product_id, renter_id, owner_id, 
+                rental_price, total_cost, payment_method, 
+                status, number_of_periods
+            ) VALUES (?, ?, ?, ?, ?, 'cod', 'pending_confirmation', ?)");
             
             $stmt->execute([
                 $productId,
                 $userId,
                 $product['owner_id'],
-                $startDate,
-                $endDate,
                 $product['rental_price'],
                 $totalCost,
-                'cod'
+                $periods
             ]);
         }
         // Cart Checkout Flow
         else {
-            // Get cart items with product details
+            // Get cart items with period information
             $stmt = $conn->prepare("
-                SELECT c.*, p.owner_id, p.rental_price, p.rental_period
+                SELECT c.product_id, c.number_of_periods, p.owner_id, p.rental_price
                 FROM cart_items c
                 INNER JOIN products p ON c.product_id = p.id
                 WHERE c.renter_id = :userId
@@ -98,45 +92,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             foreach ($cartItems as $item) {
-                // Validate cart item dates
-                if (empty($item['start_date']) || empty($item['end_date'])) {
-                    throw new Exception("Missing dates for product ID: " . $item['product_id']);
+                // Validate periods
+                $periods = (int)$item['number_of_periods'];
+                if ($periods < 1) {
+                    throw new Exception("Invalid rental duration for product ID: " . $item['product_id']);
                 }
 
-                // Calculate rental period
-                $start = new DateTime($item['start_date']);
-                $end = new DateTime($item['end_date']);
-                $interval = $start->diff($end);
-                $days = $interval->days + 1;
+                // Calculate dates
+                $startDate = date('Y-m-d');
+                $endDate = date('Y-m-d', strtotime("+$periods days"));
 
-                switch (strtolower($item['rental_period'])) {
-                    case 'day': $periods = $days; break;
-                    case 'week': $periods = ceil($days / 7); break;
-                    case 'month': $periods = ceil($days / 30); break;
-                    default: $periods = 1;
-                }
-
+                // Calculate total cost
                 $totalCost = $item['rental_price'] * $periods;
 
                 // Create rental record
                 $stmt = $conn->prepare("
-                    INSERT INTO rentals (
-                        product_id, renter_id, owner_id, start_date, end_date,
-                        rental_price, total_cost, status, payment_method, created_at, updated_at
-                    ) VALUES (
-                        :product_id, :renter_id, :owner_id, :start_date, :end_date,
-                        :rental_price, :total_cost, 'pending_confirmation', 'cod', NOW(), NOW()
-                    )
-                ");
+                INSERT INTO rentals (
+                    product_id, renter_id, owner_id,
+                    rental_price, total_cost, status, 
+                    payment_method, number_of_periods
+                ) VALUES (
+                    :product_id, :renter_id, :owner_id,
+                    :rental_price, :total_cost, 'pending_confirmation',
+                    'cod', :number_of_periods
+                )
+            ");
                 
                 $stmt->execute([
                     ':product_id' => $item['product_id'],
                     ':renter_id' => $userId,
                     ':owner_id' => $item['owner_id'],
-                    ':start_date' => $item['start_date'],
-                    ':end_date' => $item['end_date'],
+                    ':start_date' => $startDate,
+                    ':end_date' => $endDate,
                     ':rental_price' => $item['rental_price'],
-                    ':total_cost' => $totalCost
+                    ':total_cost' => $totalCost,
+                    ':number_of_periods' => $item['number_of_periods']
                 ]);
             }
 

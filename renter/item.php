@@ -64,7 +64,6 @@ $productData = [
     <link href="../vendor/bootstrap-5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="../vendor/font/bootstrap-icons.css">
     <link rel="stylesheet" href="../css/renter/style.css">
-    <link rel="stylesheet" href="../vendor/flatpickr.min.css">
 </head>
 
 <body>
@@ -169,22 +168,31 @@ $productData = [
                             <!-- Reservation Form -->
                             <div class="col-8 d-flex pe-2 d-flex flex-column">
                                 <div class="row mb-5 ps-3 pe-5 me-5">
-                                    <small class="text-secondary p-0 mb-2">Set a Date:</small>
-                                    <div class="d-flex flex-column m-0 p-0">
-                                    <input class="border border-success border-1 rounded-start px-2 text-success" type="text" id="startDate" placeholder="Start Date" required>
-                                    <input class="border border-success border-1 rounded-end px-2 text-success" type="text" id="endDate" placeholder="End Date" required>
-                                    </div>
+                                <small class="text-secondary p-0 mb-2">Rental Duration:</small>
+                                <div class="d-flex flex-column m-0 p-0">
+                                <input 
+                                type="number" 
+                                id="rentalPeriods" 
+                                name="rental_periods" 
+                                min="1" 
+                                value="1" 
+                                class="form-control"
+                                required
+                                onchange="calculateTotal()" 
+                                oninput="calculateTotal()">
+                                    <small class="text-muted">Number of <?= strtolower($product['rental_period']) ?><?= $product['rental_period'] === 'Day' ? 's' : '' ?></small>
+                                </div>
                                 </div>
 
 
 
                                 <div class="d-flex justify-content-end">
-    <!-- Add to Cart Form -->
-    <form method="post" action="">
+                                <!-- Add to Cart Form -->
+                                <form method="post" action="">
                                     <input type="hidden" name="add_to_cart" value="1">
                                     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token']; ?>">
                                     <button type="submit" class="px-3 py-2 btn rounded-pill shadow-sm btn-light px-3 border ms-auto">
-                                        <i class="bi bi-bag-plus pe-1"></i>
+                                    <i class="bi bi-bag-plus pe-1"></i>
                                         Add to Cart
                                     </button>
                                 </form>
@@ -195,16 +203,15 @@ $productData = [
                                     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token']; ?>">
                                     <!-- Direct Checkout Indicator -->
                                     <input type="hidden" name="direct_checkout" value="1">
+                                    <input type="hidden" name="rental_periods" value="1" id="hiddenRentalPeriods">
                                     <!-- Product Details -->
                                     <input type="hidden" name="product_id" value="<?= $product['id']; ?>">
-                                    <input type="hidden" name="start_date" id="checkout_start_date" value="">
-                                    <input type="hidden" name="end_date" id="checkout_end_date" value="">
                                     <button type="submit" class="px-3 py-2 btn rounded-pill shadow-sm btn-success d-flex align-items-center gap-2" <?php echo ($productData['quantity'] < 1) ? 'disabled' : ''; ?>>
                                         Checkout
                                         <span class="mb-0 ps-1 fw-bold" id="checkoutTotalPrice">₱<?php echo $productData['rental_price']; ?></span>
                                     </button>
                                 </form>
-</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -347,93 +354,21 @@ $productData = [
             </div>
 
         </div>
-
-        <!-- Footer Section -->
         <?php require_once '../includes/footer.php' ?>
 
     </div>
     <script src="../vendor/bootstrap-5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../vendor/flatpickr.min.js"></script>
     <script>
-        // Initialize flatpickr
-        flatpickr("#startDate", {
-            dateFormat: "Y-m-d", 
-            maxDate: new Date(2025, 11, 1), 
-            minDate: "today",     
-            disableMobile: true,
-            onChange: function(selectedDates, dateStr, instance) {
-                document.getElementById('checkout_start_date').value = dateStr;
-                calculateTotal();
-            }
-        });
-
-        flatpickr("#endDate", {
-            dateFormat: "Y-m-d", 
-            maxDate: new Date(2025, 11, 1), 
-            minDate: "today",     
-            disableMobile: true,
-            onChange: function(selectedDates, dateStr, instance) {
-                document.getElementById('checkout_end_date').value = dateStr;
-                calculateTotal();
-            }
-        });
-
-        document.querySelector('form[action="checkout.php"]').addEventListener('submit', function(e) {
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
+function calculateTotal() {
+    const periods = parseInt(document.getElementById('rentalPeriods').value) || 1;
+    const pricePerPeriod = <?php echo floatval($product['rental_price']); ?>;
+    const totalPrice = periods * pricePerPeriod;
     
-    if (!startDate || !endDate) {
-        e.preventDefault();
-        alert('Please select both start and end dates.');
-    } else {
-        // Update hidden inputs for checkout
-        document.getElementById('checkout_start_date').value = startDate;
-        document.getElementById('checkout_end_date').value = endDate;
-    }
-});
-        // Calculate total rental price based on selected dates
-        function calculateTotal() {
-            const startDateInput = document.getElementById('startDate');
-            const endDateInput = document.getElementById('endDate');
-            const totalPriceDisplay = document.getElementById('checkoutTotalPrice');
-            
-            const pricePerPeriod = <?php echo floatval($product['rental_price']); ?>; // PHP price
-            const rentalPeriod = "<?php echo strtolower($product['rental_period']); ?>"; // e.g., 'day', 'week', 'month'
-            const startDate = new Date(startDateInput.value);
-            const endDate = new Date(endDateInput.value);
 
-            // Validate if both dates are selected and startDate is before or equal to endDate
-            if (startDateInput.value && endDateInput.value && startDate <= endDate) {
-                const timeDifference = endDate - startDate; // Milliseconds difference
-                const daysDifference = Math.ceil(timeDifference / (1000 * 3600 * 24)) + 1; // Convert to days (+1 for inclusive day)
-                
-                let periods = 1;
-                switch (rentalPeriod) {
-                    case 'day':
-                        periods = daysDifference;
-                        break;
-                    case 'week':
-                        periods = Math.ceil(daysDifference / 7);
-                        break;
-                    case 'month':
-                        periods = Math.ceil(daysDifference / 30);
-                        break;
-                    default:
-                        periods = 1;
-                }
-
-                const totalPrice = periods * pricePerPeriod; // Total cost calculation
-                totalPriceDisplay.textContent = '₱' + totalPrice.toFixed(2); // Update display
-            } else {
-                totalPriceDisplay.textContent = '₱' + pricePerPeriod.toFixed(2); // Default price per period
-            }
-        }
-
-        // Initialize total price on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            calculateTotal();
-        });
-        </script>
+    document.getElementById('checkoutTotalPrice').textContent = '₱' + totalPrice.toFixed(2);
+    document.getElementById('hiddenRentalPeriods').value = periods;
+}
+</script>
 </body>
 <script src="vendor/bootstrap-5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 

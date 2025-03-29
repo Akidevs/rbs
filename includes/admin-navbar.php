@@ -189,8 +189,8 @@ if ($admin) {
         <div class="mx-2">
             <input type="text" class="form-control mx-auto" placeholder="Search">
         </div>
-        <a href="/admin/dashboard.php" class=""><i class="fas fa-tachometer-alt me-2"></i> Dashboard</a>
-        <a href="/admin/account-management.php"><i class="fas fa-user me-2"></i> Account Management</a>
+        <a href="../admin/dashboard.php" class=""><i class="fas fa-tachometer-alt me-2"></i> Dashboard</a>
+        <a href="../admin/account-management.php"><i class="fas fa-user me-2"></i> Account Management</a>
 
         <!-- Verification Confirmation Section -->
         <a href="#" class="verification-toggle" id="verificationConfirmation">
@@ -201,12 +201,12 @@ if ($admin) {
             <a href="gadget_verification.php" class="verification-option"><i class="fas fa-clipboard-check me-2"></i> Gadget Verification</a> <!-- Changed icon here -->
         </div>
 
-        <a href="/admin/gadget-management.php"><i class="fas fa-tablet-alt me-2"></i> Gadget Management</a>
-        <a href="/admin/transactions.php"><i class="fas fa-exchange-alt me-2"></i> Transactions</a>
-        <a href="/admin/review_disputes.php"><i class="fas fa-gavel me-2"></i> Dispute Management</a>
-        <a href="/admin/analytics.php"><i class="fas fa-chart-line me-2"></i> Reports and Analytics</a>
-        <a href="/admin/supports.php"><i class="fas fa-headset me-2"></i> Support</a>
-        <a href="/admin/logout.php" class="text-danger"><i class="fas fa-sign-out-alt me-2"></i> Log Out</a>
+        <a href="../admin/gadget-management.php"><i class="fas fa-tablet-alt me-2"></i> Gadget Management</a>
+        <a href="../admin/transactions.php"><i class="fas fa-exchange-alt me-2"></i> Transactions</a>
+        <a href="../admin/review_disputes.php"><i class="fas fa-gavel me-2"></i> Dispute Management</a>
+        <a href="../admin/analytics.php"><i class="fas fa-chart-line me-2"></i> Reports and Analytics</a>
+        <a href="../admin/supports.php"><i class="fas fa-headset me-2"></i> Support</a>
+        <a href="../admin/logout.php" class="text-danger"><i class="fas fa-sign-out-alt me-2"></i> Log Out</a>
     </div>
 
     <script>

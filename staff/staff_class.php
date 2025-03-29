@@ -140,8 +140,13 @@ class Staff {
 
     // Pickup Confirmations
     public function getSpecificRental($rentalId, $staffId) {
-        $sql = "SELECT r.*, p.name AS product_name, p.image, 
-                     owner.name AS owner_name, renter.name AS renter_name
+        $sql = "SELECT r.*, 
+                       p.name AS product_name, 
+                       p.image, 
+                       p.rental_period,
+                       p.overdue_price,
+                       owner.name AS owner_name, 
+                       renter.name AS renter_name
                 FROM rentals r
                 JOIN products p ON r.product_id = p.id
                 JOIN users owner ON r.owner_id = owner.id
@@ -157,105 +162,6 @@ class Staff {
             ':staff_id' => $staffId
         ]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    public function updateRentalStatus($rentalId, $newStatus, $staffId) {
-        // Validation
-        $allowedStatuses = ['ready_for_pickup','picked_up', 'active', 'returned', 'overdue', 'pending_return'];
-        if (!in_array($newStatus, $allowedStatuses)) {
-            throw new Exception("Invalid status");
-        }
-    
-        // State transition validation
-        $currentStatus = $this->getCurrentRentalStatus($rentalId);
-        if (!$this->isValidStatusTransition($currentStatus, $newStatus)) {
-            throw new Exception("Invalid status transition from $currentStatus to $newStatus");
-        }
-    
-        try {
-            $this->conn->beginTransaction();
-    
-            // Main status update
-            $sql = "UPDATE rentals SET 
-                        status = :status,
-                        admin_id = :staff_id,
-                        updated_at = NOW()
-                    WHERE id = :rental_id";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute([
-                ':status' => $newStatus,
-                ':staff_id' => $staffId,
-                ':rental_id' => $rentalId
-            ]);
-    
-            // Additional updates for specific status
-            if ($newStatus === 'returned') {
-                $stmt = $this->conn->prepare("UPDATE rentals SET actual_end_date = NOW() WHERE id = :rental_id");
-                $stmt->execute([':rental_id' => $rentalId]);
-            }
-    
-            // Verify changes
-            if ($stmt->rowCount() === 0) {
-                throw new Exception("No changes made - rental might not exist");
-            }
-    
-            $this->conn->commit();
-        } catch (Exception $e) {
-            $this->conn->rollBack();
-            throw $e;  // Re-throw for error handling upstream
-        }
-    }
-
-    private function getCurrentRentalStatus($rentalId) {
-        $stmt = $this->conn->prepare("SELECT status FROM rentals WHERE id = :id");
-        $stmt->execute([':id' => $rentalId]);
-        return $stmt->fetchColumn();
-    }
-    
-    private function isValidStatusTransition($current, $new) {
-        // Implement your state transition logic here
-        $allowedTransitions = [
-            'pending_confirmation' => ['ready_for_pickup'],
-            'handed_over_to_admin' => ['ready_for_pickup'],  
-            'ready_for_pickup' => ['picked_up'],
-            'picked_up' => ['active', 'returned', 'pending_return', 'overdue'], // Added 'pending_return'
-            'active' => ['returned', 'overdue'],
-            'overdue' => ['returned'],
-            'pending_return' => ['returned'] // Changed from 'pending_return' to 'returned'
-        ];
-        
-        return isset($allowedTransitions[$current]) && 
-               in_array($new, $allowedTransitions[$current]);
-    }
-
-    // Proof Handling
-    public function uploadRentalProof($rentalId, $proofType, $proofFiles, $descriptions = []) {
-        $allowedTypes = ['handed_over_to_admin', 'picked_up', 'returned'];
-        if (!in_array($proofType, $allowedTypes)) {
-            throw new Exception("Invalid proof type");
-        }
-
-        $uploadDir = '../uploads/proofs/';
-        foreach ($proofFiles['tmp_name'] as $index => $tmpName) {
-            if (!is_uploaded_file($tmpName)) {
-                throw new Exception("Invalid file upload");
-            }
-
-            $fileName = uniqid('proof_') . '_' . basename($proofFiles['name'][$index]);
-            $targetPath = $uploadDir . $fileName;
-
-            if (!move_uploaded_file($tmpName, $targetPath)) {
-                throw new Exception("File upload failed");
-            }
-
-            $description = $descriptions[$index] ?? 'Proof documentation';
-            $stmt = $this->conn->prepare("
-                INSERT INTO proofs 
-                (rental_id, proof_type, description, proof_url, created_at)
-                VALUES (?, ?, ?, ?, NOW())
-            ");
-            $stmt->execute([$rentalId, $proofType, $description, $fileName]);
-        }
     }
 
     // UI Helpers
@@ -296,7 +202,7 @@ class Staff {
                   JOIN products p ON r.product_id = p.id
                   JOIN users u ON r.renter_id = u.id
                   WHERE r.status = 'overdue' 
-                  OR (r.end_date < CURDATE() AND r.actual_end_date IS NULL)
+                  OR (r.end_date < CURDATE() AND r.returned_date IS NULL)
                   ORDER BY r.end_date ASC";
         return $this->conn->query($query)->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -339,15 +245,7 @@ class Staff {
         return $stmt->fetchColumn() ?? 0;
     }
 
-    public function getAllowedStatusTransitions($currentStatus) {
-        $transitions = [
-            'handed_over_to_admin' => ['ready_for_pickup'],
-            'ready_for_pickup' => ['picked_up'],
-            'picked_up' => ['returned', 'overdue'],
-            'overdue' => ['returned']
-        ];
-        return $transitions[$currentStatus] ?? [];
-    }
+
 
     public function getAllProducts($filters) {
         $conditions = [];
@@ -435,7 +333,7 @@ class Staff {
         try {
             // Update rental status
             $stmt = $this->conn->prepare("UPDATE rentals SET 
-                status = 'returned', actual_end_date = NOW() 
+                status = 'returned', returned_date = NOW()
                 WHERE id = ?");
             $stmt->execute([$rentalId]);
 
@@ -529,22 +427,7 @@ class Staff {
         }
     }
 
-    public function getSpecificAssignment($assignmentId, $rentalId) {
-        $query = "SELECT 
-                    sa.id AS assignment_id,
-                    r.id AS rental_id,
-                    p.name AS product_name,
-                    u.name AS owner_name
-                FROM staff_assignments sa
-                JOIN rentals r ON sa.rental_id = r.id
-                JOIN products p ON r.product_id = p.id
-                JOIN users u ON r.owner_id = u.id
-                WHERE sa.id = ? AND r.id = ?";
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$assignmentId, $rentalId]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
-    }
+
 
     public function getApprovedProducts($staffId, array $filters = []) {
         $sql = "SELECT 
@@ -581,4 +464,5 @@ class Staff {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+  
 }

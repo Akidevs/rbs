@@ -112,31 +112,32 @@ foreach ($rentals as $rental) {
     <?php if (!empty($rentals)): ?>
         <?php foreach ($rentals as $index => $rental): ?>
             <tr>
-                <td><?= htmlspecialchars($index + 1) ?></td>
-                <td>
-                    <div class="d-flex flex-column align-items-center">
-                        <img src="../img/uploads/<?= htmlspecialchars($rental['image']) ?>" 
-                             alt="<?= htmlspecialchars($rental['product_name']) ?>" 
-                             class="img-thumbnail">
-                        <p class="small mt-1 mb-0"><?= htmlspecialchars($rental['product_name']) ?> (<?= htmlspecialchars($rental['brand']) ?>)</p>
-                    </div>
-                </td>
-                <td><?= htmlspecialchars($rental['owner_name'] ?? 'Unknown') ?></td>
-                <td><?= htmlspecialchars($rental['start_date'] ?? 'N/A') ?></td>
-                <td><?= htmlspecialchars($rental['end_date'] ?? 'N/A') ?></td>
-                <td>
-                <span class="badge bg-<?= $renter->getStatusBadgeColor($rental['status']) ?>">
-                            <?= htmlspecialchars($rental['status']) ?>
-                        </span>
-                </td>
-                <td>
-                <span class="badge bg-<?= $renter->getRemainingDaysBadgeColor($rental['remaining_days']) ?>">
-                            <?= htmlspecialchars($rental['remaining_days']) ?>
-                        </span>
-                </td>
-                <td>
-                    <a href="rental_details.php?rental_id=<?= htmlspecialchars($rental['id']) ?>" class="btn btn-info btn-sm">View</a>
-                </td>
+            <td><?= htmlspecialchars($index + 1) ?></td>
+<td>
+    <div class="d-flex flex-column align-items-center">
+        <img src="../img/uploads/<?= htmlspecialchars($rental['image']) ?>" 
+             alt="<?= htmlspecialchars($rental['product_name']) ?>" 
+             class="img-thumbnail">
+        <p class="small mt-1 mb-0"><?= htmlspecialchars($rental['product_name']) ?> (<?= htmlspecialchars($rental['brand']) ?>)</p>
+    </div>
+</td>
+<!-- Corrected column order -->
+<td><?= htmlspecialchars($rental['owner_name'] ?? 'N/A') ?></td>
+<td><?= htmlspecialchars($rental['display_start']) ?></td>
+<td><?= htmlspecialchars($rental['display_end']) ?></td>
+<td>
+    <span class="badge bg-<?= $renter->getStatusBadgeColor($rental['status']) ?>">
+        <?= htmlspecialchars($rental['status']) ?>
+    </span>
+</td>
+<td>
+    <span class="badge bg-<?= $renter->getRemainingDaysBadgeColor($rental['remaining_days']) ?>">
+        <?= htmlspecialchars($rental['remaining_days']) ?>
+    </span>
+</td>
+<td>
+    <a href="rental_details.php?rental_id=<?= htmlspecialchars($rental['id']) ?>" class="btn btn-info btn-sm">View</a>
+</td>
             </tr>
         <?php endforeach; ?>
     <?php else: ?>

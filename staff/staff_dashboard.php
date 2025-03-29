@@ -149,20 +149,26 @@ $dailyRevenue = $staff->getDailyRevenue();
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($rentalQueue as $rental): ?>
-                                    <tr>
-                                        <td><?= $rental['id'] ?></td>
-                                        <td><?= htmlspecialchars($rental['product_name']) ?></td>
-                                        <td><?= htmlspecialchars($rental['renter_name']) ?></td>
-                                        <td><?= date('M d, Y', strtotime($rental['start_date'])) ?></td>
-                                        <td>
-                                            <span class="badge <?= $staff->getStatusBadgeClass($rental['status']) ?>">
-                                                <?= $staff->formatStatus($rental['status']) ?>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
+                                        <?php foreach ($rentalQueue as $rental): ?>
+                                        <tr>
+                                            <td><?= $rental['id'] ?></td>
+                                            <td><?= htmlspecialchars($rental['product_name']) ?></td>
+                                            <td><?= htmlspecialchars($rental['renter_name']) ?></td>
+                                            <td>
+                                                <?php if (!empty($rental['start_date'])): ?>
+                                                    <?= date('M d, Y', strtotime($rental['start_date'])) ?>
+                                                <?php else: ?>
+                                                    N/A
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge <?= $staff->getStatusBadgeClass($rental['status']) ?>">
+                                                    <?= $staff->formatStatus($rental['status']) ?>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
                             </table>
                         </div>
                     </div>
@@ -190,18 +196,17 @@ $dailyRevenue = $staff->getDailyRevenue();
                                 </thead>
                                 <tbody>
                                     <?php foreach ($returnQueue as $return): ?>
-                                    <tr>
-                                        <td><?= $return['id'] ?></td>
-                                        <td><?= htmlspecialchars($return['product_name']) ?></td>
-                                        <td><?= htmlspecialchars($return['renter_name']) ?></td>
-                                        <td><?= date('M d, Y', strtotime($return['end_date'])) ?></td>
-                                        <td>
-                                            <?php 
-                                            $dueDate = new DateTime($return['end_date']);
-                                            $today = new DateTime();
-                                            echo $today->diff($dueDate)->format('%a days');
-                                            ?>
-                                        </td>
+                                        <tr>
+                                            <td><?= $return['id'] ?></td>
+                                            <td><?= htmlspecialchars($return['product_name']) ?></td>
+                                            <td><?= htmlspecialchars($return['renter_name']) ?></td>
+                                            <td>
+                                                <?php if (!empty($return['end_date'])): ?>
+                                                    <?= date('M d, Y', strtotime($return['end_date'])) ?>
+                                                <?php else: ?>
+                                                    N/A
+                                                <?php endif; ?>
+                                            </td>
                                         <td>
                                             <a href="process_return.php?id=<?= $return['id'] ?>" 
                                                class="btn btn-sm btn-warning">Process Return</a>

@@ -172,8 +172,16 @@ if(isset($_POST['accept_handover'])) {
                                             </span>
                                         </td>
                                         <td>
-                                            <?= date('M d, Y', strtotime($device['start_date'])) ?> - 
-                                            <?= date('M d, Y', strtotime($device['end_date'])) ?>
+                                            <?php if (!empty($device['start_date'])): ?>
+                                                <?= date('M d, Y', strtotime($device['start_date'])) ?>
+                                            <?php else: ?>
+                                                N/A
+                                            <?php endif; ?> - 
+                                            <?php if (!empty($device['end_date'])): ?>
+                                                <?= date('M d, Y', strtotime($device['end_date'])) ?>
+                                            <?php else: ?>
+                                                N/A
+                                            <?php endif; ?>
                                         </td>
                                         <td><?= date('M d, Y H:i', strtotime($device['assigned_at'])) ?></td>
                                         <td>

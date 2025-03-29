@@ -180,13 +180,13 @@ if (isset($_POST['become_renter'])) {
             <!-- Sidebar -->
             <div id="sidebar" class="sidebar">
                 <input type="text" class="form-control my-3" placeholder="Search">
-                <a href="/owner/dashboard.php" id="dashboardLink"><i class="fas fa-tachometer-alt me-2 text-success"></i> Dashboard</a>
-                <a href="/owner/gadget.php" id="gadgetLink"><i class="fas fa-tablet-alt me-2 text-success"></i> Gadgets</a>
-                <a href="/owner/rentals.php" id="rentalsLink"><i class="fas fa-sync-alt me-2 text-success"></i> Rentals</a>
-                <a href="/owner/all-reports.php" id="reportsLink"><i class="fas fa-file-alt me-2 text-success"></i> All reports</a>
-                <a href="/owner/file_dispute.php" id="transactionsLink"><i class="fas fa-coins me-2 text-success"></i> File a Dispute </a>
-                <a href="/owner/gadgets_assessment.php" id="assessmentLink"><i class="fas fa-file-alt me-2 text-success"></i> Assess Gadgets</a>
-                <a href="/owner/logout.php" class="text-danger" id="logoutLink"><i class="fas fa-sign-out-alt me-2 text-success"></i> Log out</a>
+                <a href="../owner/dashboard.php" id="dashboardLink"><i class="fas fa-tachometer-alt me-2 text-success"></i> Dashboard</a>
+                <a href="../owner/gadget.php" id="gadgetLink"><i class="fas fa-tablet-alt me-2 text-success"></i> Gadgets</a>
+                <a href="../owner/rentals.php" id="rentalsLink"><i class="fas fa-sync-alt me-2 text-success"></i> Rentals</a>
+                <a href="../owner/all-reports.php" id="reportsLink"><i class="fas fa-file-alt me-2 text-success"></i> All reports</a>
+                <a href="../owner/file_dispute.php" id="transactionsLink"><i class="fas fa-coins me-2 text-success"></i> File a Dispute </a>
+                <a href="../owner/gadgets_assessment.php" id="assessmentLink"><i class="fas fa-file-alt me-2 text-success"></i> Assess Gadgets</a>
+                <a href="../owner/logout.php" class="text-danger" id="logoutLink"><i class="fas fa-sign-out-alt me-2 text-success"></i> Log out</a>
             </div>
         </div>
     </div>

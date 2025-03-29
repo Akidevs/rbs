@@ -47,11 +47,10 @@ $staff_role = $_SESSION['role'];
                     Transactions
                 </a>
             </li>
-            <!-- disabled muna hehe -->
-            <li class="ps-auto">
-                <a href="help.php" class="nav-link disabled link-light fs-6 " aria-disabled="true">
-                    <i class="bi bi-patch-question me-2"></i>
-                    Help Center
+            <li>
+                <a href="receipts.php" class="nav-link link-light fs-6">
+                    <i class="bi bi-calendar-heart me-2"></i>
+                    Transactions
                 </a>
             </li>
         </ul>

@@ -232,30 +232,7 @@ class owner {
 
 
 
-    //Check Overdue Page
-    //Check Overdue Page
-    public function checkAndMarkOverdueRentals() {
-    // Fetch rentals that are past end_date and not in completed/returned/cancelled/overdue statuses
-    $sql = "SELECT id FROM rentals 
-            WHERE end_date < CURDATE() 
-            AND status NOT IN ('completed', 'returned', 'cancelled', 'overdue')
-            AND owner_id = ?";  // Added owner_id check for security
-    
-    $stmt = $this->conn->prepare($sql);
-    $stmt->execute([$this->userId]);
-    $overdueRentals = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($overdueRentals as $rental) {
-        $rentalId = $rental['id'];
-        // Fixed duplicate status assignment in original query
-        $updateStatusSql = "UPDATE rentals SET status = 'overdue' WHERE id = :rentalId";
-        $updateStatusStmt = $this->conn->prepare($updateStatusSql);
-        $updateStatusStmt->bindParam(':rentalId', $rentalId, PDO::PARAM_INT);
-        $updateStatusStmt->execute();
-    }
-
-    return count($overdueRentals); // Return number of marked overdue rentals
-}
 
 
 //Dashboard Page
@@ -388,33 +365,55 @@ class owner {
     }
 
 
+//add gadget
 
-
-//Gadget Pages
-// Handle Add Product
     public function handleAddProduct($data, $file) {
         try {
             if (!isset($data['csrf_token']) || !$this->verifyCsrfToken($data['csrf_token'])) {
                 throw new Exception("CSRF token verification failed.");
             }
-
+    
             // Retrieve and sanitize form data
             $name = trim($data['name']);
             $brand = trim($data['brand']);
             $description = trim($data['description']);
             $rental_price = floatval($data['rental_price']);
+            
+            // Validate rental period exactly
             $rental_period = isset($data['rental_period']) ? trim($data['rental_period']) : null;
+            $valid_rental_periods = ['Day', 'Week', 'Month'];
+            if (!in_array($rental_period, $valid_rental_periods)) {
+                throw new Exception("Invalid rental period. Must be Day, Week, or Month.");
+            }
+    
             $category = trim($data['category']);
+            $valid_categories = ['Mobile Phones', 'Laptops', 'Tablets', 'Cameras', 'Accessories', 'Gaming Consoles', 'Audio Devices', 'Drones'];
+            if (!in_array($category, $valid_categories)) {
+                throw new Exception("Invalid category.");
+            }
+    
             $quantity = intval($data['quantity']);
             $overdue_price = floatval($data['overdue_price']);  
             $real_price = floatval($data['real_price']);
             $condition_description = trim($data['condition_description']);
-
-            if (empty($name) || empty($brand) || empty($description) || $rental_price <= 0 || empty($rental_period) || empty($category) || $quantity <= 0) {
-                throw new Exception("Validation failed: Missing or invalid fields.");
+    
+            // Detailed validation
+            $errors = [];
+            if (empty($name)) $errors[] = "Name is required";
+            if (empty($brand)) $errors[] = "Brand is required";
+            if (empty($description)) $errors[] = "Description is required";
+            if ($rental_price <= 0) $errors[] = "Rental price must be positive";
+            if ($quantity <= 0) $errors[] = "Quantity must be positive";
+            if (empty($condition_description)) $errors[] = "Condition description is required";
+    
+            if (!empty($errors)) {
+                throw new Exception("Validation failed: " . implode(", ", $errors));
             }
-
-            // Handle image upload
+    
+            $comes_with = trim($data['comes_with'] ?? '');
+            $comes_with = ($comes_with === '') ? null : $comes_with;
+    
+            // Handle image upload (keep your existing image upload logic)
             $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif'];
             $max_file_size = 2 * 1024 * 1024;
             $image_filename = null;
@@ -423,16 +422,32 @@ class owner {
                 if ($imageUpload['success']) {
                     $image_filename = $imageUpload['filename'];
                 } else {
-                    $this->logError("Add Product Image Upload Error: " . $imageUpload['message']);
                     throw new Exception("Image upload failed: " . htmlspecialchars($imageUpload['message']));
                 }
             }
-
-            // Insert into database
+    
+            // Insert into database (keep your existing insert logic)
             $owner_id = $_SESSION['id'];
-            $stmt = $this->conn->prepare("INSERT INTO products (owner_id, name, brand, description, rental_price, rental_period, status, created_at, updated_at, image, quantity, category, overdue_price, real_price, condition_description) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$owner_id, $name, $brand, $description, $rental_price, $rental_period, $image_filename, $quantity, $category, $overdue_price, $real_price, $condition_description]);
-
+            $stmt = $this->conn->prepare("INSERT INTO products 
+            (owner_id, name, brand, comes_with, description, rental_price, rental_period, status, 
+            created_at, updated_at, image, quantity, category, overdue_price, real_price, condition_description) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $owner_id,          
+                $name,             
+                $brand,            
+                $comes_with,        
+                $description,       
+                $rental_price,      
+                $rental_period,    
+                $image_filename,    
+                $quantity,          
+                $category,          
+                $overdue_price,     
+                $real_price,        
+                $condition_description 
+            ]);
+    
             $_SESSION['success'] = "Product added successfully! Awaiting approval.";
             header("Location: gadget.php");
             exit();
@@ -1094,20 +1109,6 @@ public function calculateRemainingDays($endDate) {
     return 'Due Today';
 }
 
-
-    
-
-    
-    
-
 }
-
-
-
-
-
-    
-
-
 
 ?>
